@@ -49,7 +49,8 @@ class iosrtcPlugin : CDVPlugin {
 		)
 
 		// Create a PluginRTCAudioController instance.
-		self.audioOutputController = PluginRTCAudioController()
+		// FIX: avoid initializing to allow previous AVAudioSession to configuration
+//		self.audioOutputController = PluginRTCAudioController()
 	}
 
 	private func initPeerConnectionFactory() {
@@ -1018,11 +1019,27 @@ class iosrtcPlugin : CDVPlugin {
 			let audioRequested: Bool = CBool(command.arguments[0] as! Bool)
 			let videoRequested: Bool = CBool(command.arguments[1] as! Bool)
 			var status: Bool = true
+            var pendingVideo: Bool = false
+            var pendingAudio: Bool = false
 
 			if videoRequested == true {
 				switch AVCaptureDevice.authorizationStatus(for: AVMediaType.video) {
 				case AVAuthorizationStatus.notDetermined:
 					NSLog("PluginGetUserMedia#call() | video authorization: not determined")
+                    pendingVideo = true
+                    AVCaptureDevice.requestAccess(for: AVMediaType.video, completionHandler: { (granted) in
+                        pendingVideo = false
+                        if(!granted) {
+                            status = false
+                        }
+                        if(status){
+                            if(!pendingAudio) {
+                                self.emit(command.callbackId,result: CDVPluginResult(status: CDVCommandStatus_OK))
+                            }
+                        }else{
+                            self.emit(command.callbackId,result: CDVPluginResult(status: CDVCommandStatus_ERROR))
+                        }
+                    })
 				case AVAuthorizationStatus.authorized:
 					NSLog("PluginGetUserMedia#call() | video authorization: authorized")
 				case AVAuthorizationStatus.denied:
@@ -1039,6 +1056,20 @@ class iosrtcPlugin : CDVPlugin {
 				switch AVCaptureDevice.authorizationStatus(for: AVMediaType.audio) {
 				case AVAuthorizationStatus.notDetermined:
 					NSLog("PluginGetUserMedia#call() | audio authorization: not determined")
+                    pendingAudio = true
+                    AVCaptureDevice.requestAccess(for: AVMediaType.audio, completionHandler: { (granted) in
+                        pendingAudio = false
+                        if(!granted) {
+                            status = false
+                        }
+                        if(status){
+                            if(!pendingVideo) {
+                                self.emit(command.callbackId,result: CDVPluginResult(status: CDVCommandStatus_OK))
+                            }
+                        }else{
+                            self.emit(command.callbackId,result: CDVPluginResult(status: CDVCommandStatus_ERROR))
+                        }
+                    })
 				case AVAuthorizationStatus.authorized:
 					NSLog("PluginGetUserMedia#call() | audio authorization: authorized")
 				case AVAuthorizationStatus.denied:
@@ -1050,10 +1081,12 @@ class iosrtcPlugin : CDVPlugin {
 				}
 			}
 
-			if (status) {
-				self.emit(command.callbackId,result: CDVPluginResult(status: CDVCommandStatus_OK))
-			} else {
-				self.emit(command.callbackId,result: CDVPluginResult(status: CDVCommandStatus_ERROR))
+            if(!pendingVideo && !pendingAudio) {
+				if (status) {
+					self.emit(command.callbackId,result: CDVPluginResult(status: CDVCommandStatus_OK))
+				} else {
+					self.emit(command.callbackId,result: CDVPluginResult(status: CDVCommandStatus_ERROR))
+				}
 			}
 		}
 	}
